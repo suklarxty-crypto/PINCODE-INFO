@@ -1,4 +1,4 @@
-# app.py - Pincode Info API
+# app.py - Pincode Info API (FULLY FIXED - FLAT)
 from flask import Flask, request, jsonify
 import requests
 import json
@@ -61,8 +61,12 @@ def validate_pincode(pincode):
     
     return True, pincode
 
+
 def get_pincode_info(pincode):
-    """Get pincode information"""
+    """
+    Get pincode information
+    FIXED: Uses HTTP (api.postalpincode.in has SSL issues with HTTPS)
+    """
     is_valid, result = validate_pincode(pincode)
     
     if not is_valid:
@@ -74,125 +78,133 @@ def get_pincode_info(pincode):
     
     pincode_clean = result
     
-    try:
-        url = f"https://api.postalpincode.in/pincode/{pincode_clean}"
-        
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data and isinstance(data, list) and len(data) > 0:
-            if data[0].get('Status') == 'Success':
-                return {
-                    "status": "success",
-                    "data": data[0],
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-                }
-            else:
-                return {
-                    "status": "error",
-                    "message": data[0].get('Message', 'No data found'),
-                    "pincode": pincode_clean
-                }
-        else:
-            return {
-                "status": "error",
-                "message": "No data found for this pincode",
-                "pincode": pincode_clean
-            }
+    # Try multiple URLs (HTTP first since HTTPS has SSL issues)
+    urls = [
+        f"http://api.postalpincode.in/pincode/{pincode_clean}",
+        f"https://api.postalpincode.in/pincode/{pincode_clean}",
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
+    
+    last_error = None
+    
+    for url in urls:
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=30,
+                verify=False  # Ignore SSL issues
+            )
+            response.raise_for_status()
+            data = response.json()
             
-    except requests.exceptions.Timeout:
-        return {
-            "status": "error",
-            "message": "Request timeout",
-            "pincode": pincode_clean
-        }
-    except requests.exceptions.ConnectionError:
-        return {
-            "status": "error",
-            "message": "Connection error",
-            "pincode": pincode_clean
-        }
-    except requests.exceptions.RequestException as e:
-        return {
-            "status": "error",
-            "message": f"Network error: {str(e)}",
-            "pincode": pincode_clean
-        }
-    except json.JSONDecodeError:
-        return {
-            "status": "error",
-            "message": "Invalid response format",
-            "pincode": pincode_clean
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Unexpected error: {str(e)}",
-            "pincode": pincode_clean
-        }
-
-def format_pincode_response(data):
-    """Format pincode data"""
-    if not data:
-        return None
-    
-    pincode_data = data.get('data', {})
-    
-    # Basic Info
-    basic = {}
-    basic['status'] = pincode_data.get('Status', 'N/A')
-    basic['message'] = pincode_data.get('Message', 'N/A')
-    basic['total_offices'] = len(pincode_data.get('PostOffice', []))
-    
-    # Post Offices
-    post_offices = []
-    for po in pincode_data.get('PostOffice', []):
-        office = {
-            'name': po.get('Name', 'N/A'),
-            'branch_type': po.get('BranchType', 'N/A'),
-            'delivery_status': po.get('DeliveryStatus', 'N/A'),
-            'circle': po.get('Circle', 'N/A'),
-            'district': po.get('District', 'N/A'),
-            'division': po.get('Division', 'N/A'),
-            'region': po.get('Region', 'N/A'),
-            'block': po.get('Block', 'N/A'),
-            'state': po.get('State', 'N/A'),
-            'country': po.get('Country', 'N/A'),
-            'pincode': po.get('Pincode', 'N/A')
-        }
-        post_offices.append(office)
-    
-    # Statistics
-    stats = {}
-    branch_types = {}
-    delivery_status = {}
-    districts = {}
-    states = {}
-    
-    for po in pincode_data.get('PostOffice', []):
-        branch = po.get('BranchType', 'Unknown')
-        branch_types[branch] = branch_types.get(branch, 0) + 1
-        
-        delivery = po.get('DeliveryStatus', 'Unknown')
-        delivery_status[delivery] = delivery_status.get(delivery, 0) + 1
-        
-        district = po.get('District', 'Unknown')
-        districts[district] = districts.get(district, 0) + 1
-        
-        state = po.get('State', 'Unknown')
-        states[state] = states.get(state, 0) + 1
-    
-    stats['branch_types'] = branch_types
-    stats['delivery_status'] = delivery_status
-    stats['districts'] = districts
-    stats['states'] = states
+            if data and isinstance(data, list) and len(data) > 0:
+                if data[0].get('Status') == 'Success':
+                    return {
+                        "status": "success",
+                        "data": data[0],
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": data[0].get('Message', 'No data found'),
+                        "pincode": pincode_clean
+                    }
+        except requests.exceptions.Timeout:
+            last_error = "Request timeout"
+            continue
+        except requests.exceptions.ConnectionError as e:
+            last_error = f"Connection error: {str(e)}"
+            continue
+        except requests.exceptions.SSLError as e:
+            last_error = f"SSL error: {str(e)}"
+            continue
+        except requests.exceptions.RequestException as e:
+            last_error = f"Network error: {str(e)}"
+            continue
+        except json.JSONDecodeError:
+            last_error = "Invalid response format"
+            continue
+        except Exception as e:
+            last_error = f"Unexpected error: {str(e)}"
+            continue
     
     return {
-        "basic": basic,
-        "statistics": stats,
-        "post_offices": post_offices
+        "status": "error",
+        "message": last_error or "Failed to fetch pincode data",
+        "pincode": pincode_clean
     }
+
+
+def build_flat_response(result, pincode):
+    """
+    Build FULLY FLAT response - all top-level fields, no nesting
+    Post offices as compact list
+    """
+    d = result.get('data', {})
+    post_offices = d.get('PostOffice', [])
+    
+    # Aggregate data from all post offices
+    districts = set()
+    states = set()
+    circles = set()
+    divisions = set()
+    regions = set()
+    blocks = set()
+    countries = set()
+    
+    for po in post_offices:
+        if po.get('District'): districts.add(po.get('District'))
+        if po.get('State'): states.add(po.get('State'))
+        if po.get('Circle'): circles.add(po.get('Circle'))
+        if po.get('Division'): divisions.add(po.get('Division'))
+        if po.get('Region'): regions.add(po.get('Region'))
+        if po.get('Block'): blocks.add(po.get('Block'))
+        if po.get('Country'): countries.add(po.get('Country'))
+    
+    # Build office list (compact, one-line per office)
+    offices_compact = []
+    for po in post_offices:
+        offices_compact.append({
+            "name": po.get('Name', 'N/A'),
+            "branch_type": po.get('BranchType', 'N/A'),
+            "delivery_status": po.get('DeliveryStatus', 'N/A'),
+            "district": po.get('District', 'N/A'),
+            "division": po.get('Division', 'N/A'),
+            "region": po.get('Region', 'N/A'),
+            "block": po.get('Block', 'N/A'),
+            "state": po.get('State', 'N/A')
+        })
+    
+    response = {
+        "status": "success",
+        "pincode": pincode,
+        "api_status": d.get('Status', 'N/A'),
+        "api_message": d.get('Message', 'N/A'),
+        "total_offices": len(post_offices),
+        "districts": list(districts),
+        "states": list(states),
+        "circles": list(circles),
+        "divisions": list(divisions),
+        "regions": list(regions),
+        "blocks": list(blocks),
+        "countries": list(countries),
+        "post_offices": offices_compact,
+        "timestamp": result.get('timestamp', 'N/A'),
+        "credit": {
+            "username": "@KINGFFAIAK47x",
+            "made_by": "ANSH AFT"
+        }
+    }
+    
+    return response
+
 
 # ==============================================
 # ONLY 1 ENDPOINT
@@ -218,12 +230,13 @@ def home():
         }
     })
 
+
 @app.route('/pincode', methods=['GET'])
 @require_api_key
 def get_pincode():
     """
-    Get pincode information
-    Example: /pincode?code=110001&key=your_api_key
+    Get pincode information - FLAT RESPONSE
+    Example: /pincode?code=110001&key=AFT
     """
     pincode = request.args.get('code', '').strip()
     
@@ -241,18 +254,8 @@ def get_pincode():
     result = get_pincode_info(pincode)
     
     if result['status'] == 'success':
-        formatted_data = format_pincode_response(result)
-        
-        return jsonify({
-            "status": "success",
-            "pincode": pincode,
-            "data": formatted_data,
-            "timestamp": result['timestamp'],
-            "credit": {
-                "username": "@KINGFFAIAK47x",
-                "made_by": "ANSH AFT"
-            }
-        })
+        flat = build_flat_response(result, pincode)
+        return jsonify(flat)
     else:
         return jsonify({
             "status": "error",
@@ -263,6 +266,7 @@ def get_pincode():
                 "made_by": "ANSH AFT"
             }
         }), 400
+
 
 @app.errorhandler(404)
 def not_found(error):
@@ -275,6 +279,7 @@ def not_found(error):
         }
     }), 404
 
+
 @app.errorhandler(500)
 def internal_error(error):
     return jsonify({
@@ -286,16 +291,17 @@ def internal_error(error):
         }
     }), 500
 
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     
     print("=" * 50)
-    print("📮 PINCODE INFO API")
+    print("📮 PINCODE INFO API (FLAT)")
     print("=" * 50)
-    print("🚀 Running on: http://localhost:5000")
-    print("\n🔑 Keys: AFT, FF")
-    print("\n📌 ONLY 1 ENDPOINT:")
-    print("  GET /pincode?code=110001&key=your_api_key")
+    print(f"🚀 Running on: http://localhost:{port}")
+    print("\n🔑 Key: AFT")
+    print("\n📌 ENDPOINT:")
+    print("  GET /pincode?code=110001&key=AFT")
     print("=" * 50)
     
     app.run(host='0.0.0.0', port=port, debug=True)
