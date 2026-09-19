@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # ONLY 2 KEYS
 VALID_KEYS = {
-    "AFT": "full_access",
+    "AFTFFG": "full_access",
 }
 
 # ==============================================
