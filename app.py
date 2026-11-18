@@ -1,4 +1,4 @@
-# app.py - Pincode Info API (FULLY FIXED - FLAT)
+# app.py - Pincode Info API (VERCEL FIXED)
 from flask import Flask, request, jsonify
 import requests
 import json
@@ -6,6 +6,10 @@ import time
 from functools import wraps
 import re
 import os
+import urllib3
+
+# Suppress insecure request warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
@@ -27,23 +31,24 @@ def require_api_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         api_key = request.args.get('key', '').strip()
-        
+
         if not api_key:
             return jsonify({
                 "status": "error",
                 "message": "API key required",
                 "credit": {"username": "@KINGFFAIAK47x", "made_by": "ANSH AFT"}
             }), 401
-        
+
         if api_key not in VALID_KEYS:
             return jsonify({
                 "status": "error",
                 "message": "Invalid API key",
                 "credit": {"username": "@KINGFFAIAK47x", "made_by": "ANSH AFT"}
             }), 403
-        
+
         return f(*args, **kwargs)
     return decorated_function
+
 
 # ==============================================
 # PINCODE FUNCTIONS
@@ -53,56 +58,56 @@ def validate_pincode(pincode):
     """Validate pincode"""
     if not pincode:
         return False, "Pincode required"
-    
+
     pincode = pincode.strip()
-    
+
     if not re.match(r'^[0-9]{6}$', pincode):
         return False, "Invalid pincode. Must be 6 digits"
-    
+
     return True, pincode
 
 
 def get_pincode_info(pincode):
     """
-    Get pincode information
-    FIXED: Uses HTTP (api.postalpincode.in has SSL issues with HTTPS)
+    Get pincode information.
+    Tries HTTPS first, then HTTP fallback.
     """
     is_valid, result = validate_pincode(pincode)
-    
+
     if not is_valid:
         return {
             "status": "error",
             "message": result,
             "pincode": pincode
         }
-    
+
     pincode_clean = result
-    
-    # Try multiple URLs (HTTP first since HTTPS has SSL issues)
+
+    # HTTPS first, then HTTP fallback
     urls = [
-        f"http://api.postalpincode.in/pincode/{pincode_clean}",
         f"https://api.postalpincode.in/pincode/{pincode_clean}",
+        f"http://api.postalpincode.in/pincode/{pincode_clean}",
     ]
-    
+
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9'
     }
-    
+
     last_error = None
-    
+
     for url in urls:
         try:
             response = requests.get(
                 url,
                 headers=headers,
-                timeout=30,
-                verify=False  # Ignore SSL issues
+                timeout=25,
+                verify=False
             )
             response.raise_for_status()
             data = response.json()
-            
+
             if data and isinstance(data, list) and len(data) > 0:
                 if data[0].get('Status') == 'Success':
                     return {
@@ -134,7 +139,7 @@ def get_pincode_info(pincode):
         except Exception as e:
             last_error = f"Unexpected error: {str(e)}"
             continue
-    
+
     return {
         "status": "error",
         "message": last_error or "Failed to fetch pincode data",
@@ -144,13 +149,12 @@ def get_pincode_info(pincode):
 
 def build_flat_response(result, pincode):
     """
-    Build FULLY FLAT response - all top-level fields, no nesting
-    Post offices as compact list
+    Build FULLY FLAT response - all top-level fields, no nesting.
+    Post offices as compact list.
     """
     d = result.get('data', {})
     post_offices = d.get('PostOffice', [])
-    
-    # Aggregate data from all post offices
+
     districts = set()
     states = set()
     circles = set()
@@ -158,7 +162,7 @@ def build_flat_response(result, pincode):
     regions = set()
     blocks = set()
     countries = set()
-    
+
     for po in post_offices:
         if po.get('District'): districts.add(po.get('District'))
         if po.get('State'): states.add(po.get('State'))
@@ -167,8 +171,7 @@ def build_flat_response(result, pincode):
         if po.get('Region'): regions.add(po.get('Region'))
         if po.get('Block'): blocks.add(po.get('Block'))
         if po.get('Country'): countries.add(po.get('Country'))
-    
-    # Build office list (compact, one-line per office)
+
     offices_compact = []
     for po in post_offices:
         offices_compact.append({
@@ -181,7 +184,7 @@ def build_flat_response(result, pincode):
             "block": po.get('Block', 'N/A'),
             "state": po.get('State', 'N/A')
         })
-    
+
     response = {
         "status": "success",
         "pincode": pincode,
@@ -202,12 +205,12 @@ def build_flat_response(result, pincode):
             "made_by": "ANSH AFT"
         }
     }
-    
+
     return response
 
 
 # ==============================================
-# ONLY 1 ENDPOINT
+# ENDPOINTS
 # ==============================================
 
 @app.route('/', methods=['GET'])
@@ -236,10 +239,10 @@ def home():
 def get_pincode():
     """
     Get pincode information - FLAT RESPONSE
-    Example: /pincode?code=110001&key=AFT
+    Example: /pincode?code=110001&key=AFTFFG
     """
     pincode = request.args.get('code', '').strip()
-    
+
     if not pincode:
         return jsonify({
             "status": "error",
@@ -250,9 +253,9 @@ def get_pincode():
                 "made_by": "ANSH AFT"
             }
         }), 400
-    
+
     result = get_pincode_info(pincode)
-    
+
     if result['status'] == 'success':
         flat = build_flat_response(result, pincode)
         return jsonify(flat)
@@ -292,16 +295,25 @@ def internal_error(error):
     }), 500
 
 
+# ==============================================
+# VERCEL WSGI HANDLER (REQUIRED)
+# ==============================================
+handler = app
+
+
+# ==============================================
+# LOCAL DEV ENTRYPOINT
+# ==============================================
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    
+
     print("=" * 50)
     print("📮 PINCODE INFO API (FLAT)")
     print("=" * 50)
     print(f"🚀 Running on: http://localhost:{port}")
-    print("\n🔑 Key: AFT")
+    print("\n🔑 Key: AFTFFG")
     print("\n📌 ENDPOINT:")
-    print("  GET /pincode?code=110001&key=AFT")
+    print("  GET /pincode?code=110001&key=AFTFFG")
     print("=" * 50)
-    
+
     app.run(host='0.0.0.0', port=port, debug=True)
